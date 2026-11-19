@@ -10,6 +10,7 @@ import android.os.SystemClock
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
+import android.view.ViewConfiguration
 import android.view.WindowManager
 import com.hyperclicker.data.ClickPoint
 
@@ -18,7 +19,8 @@ import com.hyperclicker.data.ClickPoint
  * 用户切到目标界面后，通过悬浮球「录点」触发本覆盖层：
  * - 快速点击 = 普通点击点位（pressMs=40）；
  * - 长按（>=500ms）= 长按点位，pressMs 记录实际按住时长；
- * 底部栏支持 取消 / 撤销 / 清空 / 完成。
+ * 底部工具栏（取消 / 撤销 / 清空 / 完成）支持上下拖动，
+ * 拖开后即可在屏幕底部正常录点；顶部条点击仍为取消。
  */
 class PointPicker(
     private val context: Context,
@@ -64,6 +66,7 @@ class PointPicker(
         private val existingPoints: List<ClickPoint>
     ) : View(context) {
         private val density = resources.displayMetrics.density
+        private val touchSlop = ViewConfiguration.get(context).scaledTouchSlop
         private val points = mutableListOf<ClickPoint>()
 
         private val normalPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -96,6 +99,11 @@ class PointPicker(
         private val barPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = 0xCC000000.toInt()
         }
+        private val gripPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.WHITE
+            style = Paint.Style.STROKE
+            strokeWidth = 2f * density
+        }
 
         private var w = 0
         private var h = 0
@@ -104,12 +112,20 @@ class PointPicker(
         private var downX = 0f
         private var downY = 0f
 
+        // 可拖动工具栏状态
+        private var barTop = 0f
+        private var downInBar = false
+        private var draggingBar = false
+        private var dragStartBarTop = 0f
+        private var dragStartY = 0f
+
         private fun topBarH() = 56f * density
-        private fun bottomBarH() = 72f * density
+        private fun barH() = 72f * density
 
         override fun onSizeChanged(width: Int, height: Int, oldw: Int, oldh: Int) {
             w = width
             h = height
+            barTop = h - barH()
         }
 
         override fun onDraw(canvas: Canvas) {
@@ -117,62 +133,94 @@ class PointPicker(
 
             canvas.drawRect(0f, 0f, w.toFloat(), topBarH(), barPaint)
             val hint = if (existingPoints.isEmpty()) {
-                "点击=普通点 · 长按=长按点 · 点顶部取消"
+                "点击=普通点 · 长按=长按点 · 点顶部取消 · 底部栏可拖动"
             } else {
-                "蓝=已有点 · 红/橙=本次新增 · 点顶部取消"
+                "蓝=已有点 · 红/橙=本次新增 · 点顶部取消 · 底部栏可拖动"
             }
             canvas.drawText(hint, w / 2f, topBarH() / 2f + 6f * density, textPaint)
 
-            val top = h - bottomBarH()
-            canvas.drawRect(0f, top, w.toFloat(), h.toFloat(), barPaint)
+            val top = barTop
+            val bottom = barTop + barH()
+            canvas.drawRect(0f, top, w.toFloat(), bottom, barPaint)
+            // 顶部中央的拖动手柄（≡）
+            val cx = w / 2f
+            val gy = top + 7f * density
+            for (k in 0..2) {
+                val yy = gy + k * 5f * density
+                canvas.drawLine(cx - 11f * density, yy, cx + 11f * density, yy, gripPaint)
+            }
             val labels = listOf("取消", "撤销", "清空", "完成")
             val slotW = w / 4f
             for (i in labels.indices) {
-                canvas.drawText(labels[i], slotW * i + slotW / 2f, top + bottomBarH() / 2f + 6f * density, textPaint)
+                canvas.drawText(labels[i], slotW * i + slotW / 2f, top + barH() / 2f + 6f * density, textPaint)
             }
 
             for ((i, p) in existingPoints.withIndex()) {
-                val cx = p.x * w
-                val cy = p.y * h
-                canvas.drawCircle(cx, cy, 24f * density, existingPaint)
-                canvas.drawCircle(cx, cy, 24f * density, ringPaint)
-                canvas.drawText("${i + 1}", cx, cy + 5f * density, textPaint)
+                val px = p.x * w
+                val py = p.y * h
+                canvas.drawCircle(px, py, 24f * density, existingPaint)
+                canvas.drawCircle(px, py, 24f * density, ringPaint)
+                canvas.drawText("${i + 1}", px, py + 5f * density, textPaint)
                 if (p.pressMs >= LONG_PRESS_MS) {
-                    canvas.drawText("长按 ${p.pressMs}ms", cx, cy + 40f * density, subTextPaint)
+                    canvas.drawText("长按 ${p.pressMs}ms", px, py + 40f * density, subTextPaint)
                 }
             }
 
             for ((i, p) in points.withIndex()) {
-                val cx = p.x * w
-                val cy = p.y * h
+                val px = p.x * w
+                val py = p.y * h
                 val dot = if (p.pressMs >= LONG_PRESS_MS) longPressPaint else normalPaint
-                canvas.drawCircle(cx, cy, 24f * density, dot)
-                canvas.drawCircle(cx, cy, 24f * density, ringPaint)
-                canvas.drawText("${existingPoints.size + i + 1}", cx, cy + 5f * density, textPaint)
+                canvas.drawCircle(px, py, 24f * density, dot)
+                canvas.drawCircle(px, py, 24f * density, ringPaint)
+                canvas.drawText("${existingPoints.size + i + 1}", px, py + 5f * density, textPaint)
                 if (p.pressMs >= LONG_PRESS_MS) {
-                    canvas.drawText("长按 ${p.pressMs}ms", cx, cy + 40f * density, subTextPaint)
+                    canvas.drawText("长按 ${p.pressMs}ms", px, py + 40f * density, subTextPaint)
                 }
             }
         }
 
         override fun onTouchEvent(event: MotionEvent): Boolean {
-            when (event.action) {
+            when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
                     downTime = SystemClock.uptimeMillis()
                     downX = event.x
                     downY = event.y
+                    downInBar = event.y >= barTop
+                    if (downInBar) {
+                        dragStartBarTop = barTop
+                        dragStartY = event.y
+                        draggingBar = false
+                    }
+                    return true
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    if (downInBar) {
+                        if (!draggingBar && Math.abs(event.y - downY) > touchSlop) {
+                            draggingBar = true
+                        }
+                        if (draggingBar) {
+                            barTop = (dragStartBarTop + (event.y - dragStartY))
+                                .coerceIn(0f, h - barH())
+                            invalidate()
+                        }
+                    }
                     return true
                 }
                 MotionEvent.ACTION_UP -> {
+                    if (draggingBar) {
+                        draggingBar = false
+                        downInBar = false
+                        return true
+                    }
                     val holdMs = SystemClock.uptimeMillis() - downTime
                     val x = event.x
                     val y = event.y
                     when {
+                        downInBar && y >= barTop && y <= barTop + barH() -> handleBottomBar(x)
                         y < topBarH() -> {
                             onCancel()
                             close()
                         }
-                        y > h - bottomBarH() -> handleBottomBar(x)
                         else -> {
                             val pressMs = if (holdMs >= LONG_PRESS_MS) holdMs.coerceAtMost(60_000L) else 40L
                             points.add(ClickPoint(downX / w, downY / h, order = points.size, pressMs = pressMs))
