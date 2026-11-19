@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">连点器</string>
+    <string name="accessibility_label">连点器无障碍服务</string>
+    <string name="accessibility_desc">用于在屏幕上模拟点击，实现自动连点。仅注入点击手势，不收集、不上传任何屏幕内容。</string>
+</resources>
