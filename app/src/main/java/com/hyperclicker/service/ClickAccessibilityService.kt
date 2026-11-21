@@ -73,6 +73,12 @@ class ClickAccessibilityService : AccessibilityService() {
         ClickerState.accessibilityConnected.value = true
         Log.i(TAG, "无障碍服务已连接，屏幕=${screenSize()}")
         showFloatingPanel()
+        // 服务重连后，恢复所有已启用的低频方案闹钟（服务被停用期间闹钟链会断裂）
+        scope.launch {
+            app.repository.getEnabledLowFreq().forEach { scheme ->
+                AlarmScheduler.schedule(this@ClickAccessibilityService, scheme)
+            }
+        }
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
@@ -213,14 +219,14 @@ class ClickAccessibilityService : AccessibilityService() {
         }
     }
 
-    /** 按顺序执行一次完整点击序列 */
+    /** 按顺序执行一次完整点击序列；最后一个点位的间隔无意义，跳过 */
     private suspend fun performSequence(points: List<ClickPoint>, w: Int, h: Int): Boolean {
         var allOk = true
-        for (p in points) {
+        for ((i, p) in points.withIndex()) {
             val px = (p.x * w).toInt().coerceIn(0, w - 1)
             val py = (p.y * h).toInt().coerceIn(0, h - 1)
             if (!dispatchClick(px.toFloat(), py.toFloat(), p.pressMs)) allOk = false
-            if (p.gapMs > 0) delay(p.gapMs)
+            if (p.gapMs > 0 && i < points.size - 1) delay(p.gapMs)
         }
         return allOk
     }
@@ -306,7 +312,8 @@ class ClickAccessibilityService : AccessibilityService() {
             WindowManager.LayoutParams.WRAP_CONTENT,
             overlayType(),
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
+                WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+                WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON,
             PixelFormat.TRANSLUCENT
         )
         lp.gravity = Gravity.TOP or Gravity.START
