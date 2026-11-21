@@ -106,6 +106,11 @@ HyperOS 杀后台很激进，低频点击要稳定，请**全部**完成以下�
 6. 回到 App 编辑方案，可**微调每个点位的长按 / 间隔 / 顺序**；回列表点 **开始** 开始连点。
 7. 悬浮球可 **开始 / 停止 / 隐藏**，支持拖动。
 
+## 低频执行说明
+
+- **息屏会中断点击**：`dispatchGesture` 注入的点击需要屏幕亮着才能送达目标 App；息屏后输入管线关闭，点击不会生效。低频长时间挂机时请保持屏幕常亮（悬浮窗显示期间已自动保持屏幕常亮；也可用「开发者选项 → 充电时保持唤醒」或调长屏幕超时），并让目标 App 保持在前台。
+- **间隔语义**：每个点位后的「间隔(ms)」是「点完这个点后，等待多久再点下一个点」。**最后一个点的间隔会被忽略**（后面没有下一个点了）。「每 X 分钟/小时」的计时从**最后一个点点击完成后**开始计算。
+
 ## 目录结构
 
 ```
@@ -254,6 +259,11 @@ HyperOS kills background apps aggressively. For reliable low-frequency tapping, 
 5. Switch to the target screen, tap the floating ball's **Record** → **tap = normal point**, **hold = long-press point** → tap **Done** at the bottom.
 6. Back in the app, fine-tune each point's press duration / gap / order; then on the list tap **Start** to begin clicking.
 7. The floating ball lets you **start / stop / hide**, and is draggable.
+
+## Low-frequency behavior
+
+- **Screen off interrupts taps**: a tap injected by `dispatchGesture` must reach the target app while the screen is on; once the screen turns off the input pipeline closes and the tap does nothing. For long low-frequency runs, keep the screen on (the screen is kept awake while the floating window is shown; you can also use Developer options → "Stay awake while charging" or a longer screen timeout) and keep the target app in the foreground.
+- **Gap semantics**: the "gap (ms)" after each point is "wait this long after tapping this point before tapping the next point". **The last point's gap is ignored** (there is no next point). The "every X minutes/hours" timer starts counting **after the last point has been tapped**.
 
 ## Project structure
 
