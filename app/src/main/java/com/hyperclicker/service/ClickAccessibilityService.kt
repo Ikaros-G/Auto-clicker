@@ -123,7 +123,8 @@ class ClickAccessibilityService : AccessibilityService() {
                 toast("请先通过悬浮球「录点」添加点击位置")
                 return@launch
             }
-            stopCurrent()
+            Log.i(TAG, "startScheme id=$id mode=${scheme.mode} enabled=${scheme.enabled} points=${points.size}")
+            stopCurrent(exceptId = scheme.id)
             ClickerState.activeSchemeId.value = scheme.id
             ClickerState.activeSchemeName.value = scheme.name
             ClickerState.running.value = true
@@ -150,14 +151,21 @@ class ClickAccessibilityService : AccessibilityService() {
         }
     }
 
-    /** 停止当前方案 */
-    fun stopCurrent() {
+    /**
+     * 停止当前方案。
+     * [exceptId] 供 startScheme 使用：启动目标方案时跳过「停用目标方案」这一步，
+     * 否则 stopCurrent 的 enabled=false 会与随后 startScheme 的 enabled=true 竞争，
+     * 导致低频方案刚启动就被关掉——表现为「只有第一遍有效」。
+     */
+    fun stopCurrent(exceptId: Long = -1L) {
         val id = ClickerState.activeSchemeId.value
-        if (id > 0) {
+        Log.i(TAG, "stopCurrent id=$id exceptId=$exceptId")
+        if (id > 0 && id != exceptId) {
             scope.launch {
                 app.repository.getById(id)?.let { s ->
                     if (s.mode == MODE_LOW_FREQ && s.enabled) {
                         app.repository.update(s.copy(enabled = false))
+                        Log.i(TAG, "stopCurrent 停用方案 id=$id")
                     }
                 }
             }
@@ -175,11 +183,14 @@ class ClickAccessibilityService : AccessibilityService() {
     fun triggerForScheme(id: Long) {
         scope.launch {
             val scheme = app.repository.getById(id) ?: return@launch
+            Log.i(TAG, "triggerForScheme id=$id mode=${scheme.mode} enabled=${scheme.enabled}")
             if (scheme.mode != MODE_LOW_FREQ || !scheme.enabled) return@launch
             val points = scheme.points()
             if (points.isEmpty()) return@launch
             val (w, h) = screenSize()
-            if (!performSequence(points, w, h)) {
+            val ok = performSequence(points, w, h)
+            Log.i(TAG, "triggerForScheme performSequence ok=$ok，已重排下一次")
+            if (!ok) {
                 toast("点击注入失败：请重新开关一次无障碍服务后再试")
             }
             AlarmScheduler.schedule(this@ClickAccessibilityService, scheme)
@@ -190,8 +201,11 @@ class ClickAccessibilityService : AccessibilityService() {
     fun testClick() {
         scope.launch {
             val (w, h) = screenSize()
-            val ok = dispatchClick(w / 2f, h / 2f, 60L)
-            toast(if (ok) "测试点击已发送（屏幕中心）" else "测试点击失败：请重新开关无障碍服务后再试")
+            val cx = (w / 2).toFloat()
+            val cy = (h / 2).toFloat()
+            val ok = dispatchClick(cx, cy, 60L)
+            Log.i(TAG, "testClick center=($cx,$cy) ok=$ok")
+            toast(if (ok) "测试点击已发送（屏幕中心 $cx,$cy）" else "测试点击失败：请重新开关无障碍服务后再试")
         }
     }
 
